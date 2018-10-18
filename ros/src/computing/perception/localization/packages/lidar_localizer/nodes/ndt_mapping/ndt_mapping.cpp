@@ -155,7 +155,7 @@ static double max_scan_range = 200.0;
 static double min_add_scan_shift = 1.0;
 
 static double _tf_x, _tf_y, _tf_z, _tf_roll, _tf_pitch, _tf_yaw;
-static Eigen::Matrix4f tf_btol, tf_ltob;
+static Eigen::Matrix4f tf_btol, tf_ltob;   // tf_btol：base_link座標系とlidar座標系の変換行列
 
 static bool _use_imu = false;
 static bool _use_odom = false;
@@ -468,27 +468,27 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 {
   double r;
   pcl::PointXYZI p;
-  pcl::PointCloud<pcl::PointXYZI> tmp, scan;
-  pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>());
-  pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+  pcl::PointCloud<pcl::PointXYZI> tmp, scan; // tmp：originalの点群，scan：min_scan_rangeにより閾値処理した点群
+  pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>()); // Voxel Grid Filter後の点群
+  pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>()); //
   tf::Quaternion q;
 
-  Eigen::Matrix4f t_localizer(Eigen::Matrix4f::Identity());
-  Eigen::Matrix4f t_base_link(Eigen::Matrix4f::Identity());
+  Eigen::Matrix4f t_localizer(Eigen::Matrix4f::Identity()); // map座標系からlidar座標系への変換行列
+  Eigen::Matrix4f t_base_link(Eigen::Matrix4f::Identity()); // map座標系からbase_link座標系への変換行列
   static tf::TransformBroadcaster br;
   tf::Transform transform;
 
   current_scan_time = input->header.stamp;
 
-  pcl::fromROSMsg(*input, tmp);
+  pcl::fromROSMsg(*input, tmp); // scan点群をtmpに格納
 
+  // Original点群をmin_scan_rangeにより閾値処理しscanに格納
   for (pcl::PointCloud<pcl::PointXYZI>::const_iterator item = tmp.begin(); item != tmp.end(); item++)
   {
     p.x = (double)item->x;
     p.y = (double)item->y;
     p.z = (double)item->z;
     p.intensity = (double)item->intensity;
-
     r = sqrt(pow(p.x, 2.0) + pow(p.y, 2.0));
     if (min_scan_range < r && r < max_scan_range)
     {
@@ -501,7 +501,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   // Add initial point cloud to velodyne_map
   if (initial_scan_loaded == 0)
   {
-    pcl::transformPointCloud(*scan_ptr, *transformed_scan_ptr, tf_btol);
+    pcl::transformPointCloud(*scan_ptr, *transformed_scan_ptr, tf_btol); // 初期cloudの座標変換
     map += *transformed_scan_ptr;
     initial_scan_loaded = 1;
   }
@@ -514,6 +514,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_ptr(new pcl::PointCloud<pcl::PointXYZI>(map));
 
+  // Set NDT matching parameters and values
   if (_method_type == MethodType::PCL_GENERIC)
   {
     ndt.setTransformationEpsilon(trans_eps);
@@ -569,6 +570,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     is_first_map = false;
   }
 
+  /* 事前予測位置 */
   guess_pose.x = previous_pose.x + diff_x;
   guess_pose.y = previous_pose.y + diff_y;
   guess_pose.z = previous_pose.z + diff_z;
@@ -583,6 +585,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   if (_use_imu == false && _use_odom == true)
     odom_calc(current_scan_time);
 
+  // IMU Odomがある場合とない場合で事前予測位置が変わる(Output: guess_pose_for_ndt)
   pose guess_pose_for_ndt;
   if (_use_imu == true && _use_odom == true)
     guess_pose_for_ndt = guess_pose_imu_odom;
@@ -593,6 +596,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   else
     guess_pose_for_ndt = guess_pose;
 
+  // 座標変換行列の初期化
   Eigen::AngleAxisf init_rotation_x(guess_pose_for_ndt.roll, Eigen::Vector3f::UnitX());
   Eigen::AngleAxisf init_rotation_y(guess_pose_for_ndt.pitch, Eigen::Vector3f::UnitY());
   Eigen::AngleAxisf init_rotation_z(guess_pose_for_ndt.yaw, Eigen::Vector3f::UnitZ());
@@ -647,12 +651,14 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   }
 #endif
 
-  t_base_link = t_localizer * tf_ltob;
+  t_base_link = t_localizer * tf_ltob; // map座標系からbase_link座標系へのtf
 
+  // Transform points with lidar origin to points with map origin （mapに追加するpointsをいじるにはこの辺り）
   pcl::transformPointCloud(*scan_ptr, *transformed_scan_ptr, t_localizer);
 
   tf::Matrix3x3 mat_l, mat_b;
 
+  // convert matrix for using mat_l.getRPY later
   mat_l.setValue(static_cast<double>(t_localizer(0, 0)), static_cast<double>(t_localizer(0, 1)),
                  static_cast<double>(t_localizer(0, 2)), static_cast<double>(t_localizer(1, 0)),
                  static_cast<double>(t_localizer(1, 1)), static_cast<double>(t_localizer(1, 2)),
@@ -792,10 +798,12 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 #endif
   }
 
+  // Publish map points
   sensor_msgs::PointCloud2::Ptr map_msg_ptr(new sensor_msgs::PointCloud2);
   pcl::toROSMsg(*map_ptr, *map_msg_ptr);
   ndt_map_pub.publish(*map_msg_ptr);
 
+  // Publish estimated position
   q.setRPY(current_pose.roll, current_pose.pitch, current_pose.yaw);
   current_pose_msg.header.frame_id = "map";
   current_pose_msg.header.stamp = current_scan_time;
