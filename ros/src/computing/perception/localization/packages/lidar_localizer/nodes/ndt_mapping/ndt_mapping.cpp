@@ -42,6 +42,7 @@
 #include <string>
 
 #include <nav_msgs/Odometry.h>
+#include <nav_msgs/Path.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -140,8 +141,10 @@ static ros::Duration d_callback, d1, d2, d3, d4, d5;
 
 static ros::Publisher ndt_map_pub;
 static ros::Publisher current_pose_pub;
+static ros::Publisher current_path_pub;
 static ros::Publisher guess_pose_linaer_pub;
 static geometry_msgs::PoseStamped current_pose_msg, guess_pose_msg;
+static nav_msgs::Path current_path_msg;
 
 static ros::Publisher ndt_stat_pub;
 static std_msgs::Bool ndt_stat_msg;
@@ -208,8 +211,8 @@ static void output_callback(const autoware_msgs::ConfigNdtMappingOutput::ConstPt
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_ptr(new pcl::PointCloud<pcl::PointXYZI>(map));
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_filtered(new pcl::PointCloud<pcl::PointXYZI>());
-  map_ptr->header.frame_id = "map";
-  map_filtered->header.frame_id = "map";
+  map_ptr->header.frame_id = "ndt_map";
+  map_filtered->header.frame_id = "ndt_map";
   sensor_msgs::PointCloud2::Ptr map_msg_ptr(new sensor_msgs::PointCloud2);
 
   // Apply voxelgrid filter
@@ -694,7 +697,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   q.setRPY(current_pose.roll, current_pose.pitch, current_pose.yaw);
   transform.setRotation(q);
 
-  br.sendTransform(tf::StampedTransform(transform, current_scan_time, "map", "base_link"));
+  br.sendTransform(tf::StampedTransform(transform, current_scan_time, "ndt_map", "base_link"));
 
   scan_duration = current_scan_time - previous_scan_time;
   double secs = scan_duration.toSec();
@@ -805,7 +808,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
   // Publish estimated position
   q.setRPY(current_pose.roll, current_pose.pitch, current_pose.yaw);
-  current_pose_msg.header.frame_id = "map";
+  current_pose_msg.header.frame_id = "ndt_map";
   current_pose_msg.header.stamp = current_scan_time;
   current_pose_msg.pose.position.x = current_pose.x;
   current_pose_msg.pose.position.y = current_pose.y;
@@ -816,6 +819,11 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   current_pose_msg.pose.orientation.w = q.w();
 
   current_pose_pub.publish(current_pose_msg);
+
+  current_path_msg.header=current_pose_msg.header;
+  current_path_msg.poses.push_back(current_pose_msg);
+
+  current_path_pub.publish(current_path_msg);
 
   // Write log
   if (!ofs)
@@ -1056,10 +1064,11 @@ int main(int argc, char** argv)
   Eigen::AngleAxisf rot_z_ltob((-1.0) * _tf_yaw, Eigen::Vector3f::UnitZ());
   tf_ltob = (tl_ltob * rot_z_ltob * rot_y_ltob * rot_x_ltob).matrix();
 
-  map.header.frame_id = "map";
+  map.header.frame_id = "ndt_map";
 
   ndt_map_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt_map", 1000);
   current_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/current_pose", 1000);
+  current_path_pub = nh.advertise<nav_msgs::Path>("/current_path", 1000);
 
   ros::Subscriber param_sub = nh.subscribe("config/ndt_mapping", 10, param_callback);
   ros::Subscriber output_sub = nh.subscribe("config/ndt_mapping_output", 10, output_callback);
