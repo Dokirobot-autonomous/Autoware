@@ -179,6 +179,8 @@ static nav_msgs::Odometry odom;
 static std::ofstream ofs;
 static std::string filename;
 
+static ros::NodeHandle* nh_global;
+
 static void param_callback(const autoware_msgs::ConfigNdtMapping::ConstPtr& input)
 {
   ndt_res = input->resolution;
@@ -476,10 +478,13 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>()); //
   tf::Quaternion q;
 
+  std::cout<<__FILE__<<","<<__LINE__<<std::endl;
+
   Eigen::Matrix4f t_localizer(Eigen::Matrix4f::Identity()); // map座標系からlidar座標系への変換行列
   Eigen::Matrix4f t_base_link(Eigen::Matrix4f::Identity()); // map座標系からbase_link座標系への変換行列
   static tf::TransformBroadcaster br;
   tf::Transform transform;
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   current_scan_time = input->header.stamp;
 
@@ -498,6 +503,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
       scan.push_back(p);
     }
   }
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr scan_ptr(new pcl::PointCloud<pcl::PointXYZI>(scan));
 
@@ -508,14 +514,19 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     map += *transformed_scan_ptr;
     initial_scan_loaded = 1;
   }
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   // Apply voxelgrid filter
   pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter;
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
   voxel_grid_filter.setLeafSize(voxel_leaf_size, voxel_leaf_size, voxel_leaf_size);
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
   voxel_grid_filter.setInputCloud(scan_ptr);
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
   voxel_grid_filter.filter(*filtered_scan_ptr);
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr map_ptr(new pcl::PointCloud<pcl::PointXYZI>(map));
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   // Set NDT matching parameters and values
   if (_method_type == MethodType::PCL_GENERIC)
@@ -613,17 +624,25 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   d3 = t3_end - t3_start;
 
   t4_start = ros::Time::now();
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
 
   if (_method_type == MethodType::PCL_GENERIC)
   {
+      std::cout<<__FILE__<<","<<__LINE__<<std::endl;
     ndt.align(*output_cloud, init_guess);
+      std::cout<<__FILE__<<","<<__LINE__<<std::endl;
     fitness_score = ndt.getFitnessScore();
+      std::cout<<__FILE__<<","<<__LINE__<<std::endl;
     t_localizer = ndt.getFinalTransformation();
+      std::cout<<__FILE__<<","<<__LINE__<<std::endl;
     has_converged = ndt.hasConverged();
+      std::cout<<__FILE__<<","<<__LINE__<<std::endl;
     final_num_iteration = ndt.getFinalNumIteration();
+      std::cout<<__FILE__<<","<<__LINE__<<std::endl;
     transformation_probability = ndt.getTransformationProbability();
+      std::cout<<__FILE__<<","<<__LINE__<<std::endl;
   }
   else if (_method_type == MethodType::PCL_ANH)
   {
@@ -673,6 +692,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
                  static_cast<double>(t_base_link(1, 1)), static_cast<double>(t_base_link(1, 2)),
                  static_cast<double>(t_base_link(2, 0)), static_cast<double>(t_base_link(2, 1)),
                  static_cast<double>(t_base_link(2, 2)));
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   // Update localizer_pose.
   localizer_pose.x = t_localizer(0, 3);
@@ -701,6 +721,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
   scan_duration = current_scan_time - previous_scan_time;
   double secs = scan_duration.toSec();
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   // Calculate the offset (curren_pos - previous_pos)
   diff_x = current_pose.x - previous_pose.x;
@@ -800,6 +821,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
       omp_ndt.setInputTarget(map_ptr);
 #endif
   }
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
   // Publish map points
   sensor_msgs::PointCloud2::Ptr map_msg_ptr(new sensor_msgs::PointCloud2);
@@ -870,6 +892,26 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   std::cout << t_localizer << std::endl;
   std::cout << "shift: " << shift << std::endl;
   std::cout << "-----------------------------------------------------------------" << std::endl;
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
+
+  int exist_kitti_player;
+  if(nh_global->getParam("exist_kitti_player",exist_kitti_player)==false){
+      exist_kitti_player=1;
+  }
+
+
+  if(exist_kitti_player==0){
+      int entries_played;
+      nh_global->getParam("/entries_played",entries_played);
+      ROS_INFO_STREAM("entries_played,path_msg.size(): "<<entries_played<<","<<current_path_msg.poses.size());
+      if ((unsigned int)entries_played<=current_path_msg.poses.size()){
+          nh_global->setParam("exist_ndt_mapping",0);
+          nh_global->shutdown();
+      }
+  }
+
+    std::cout<<__FILE__<<","<<__LINE__<<std::endl;
+
 }
 
 int main(int argc, char** argv)
@@ -946,6 +988,10 @@ int main(int argc, char** argv)
 
   ros::NodeHandle nh;
   ros::NodeHandle private_nh("~");
+
+  nh.setParam("exist_ndt_mapping",1);
+
+  nh_global=&nh;
 
   // Set log file name.
   char buffer[80];
