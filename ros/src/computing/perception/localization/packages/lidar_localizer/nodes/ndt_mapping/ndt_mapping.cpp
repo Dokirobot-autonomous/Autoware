@@ -480,7 +480,26 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
   std::cout<<__FILE__<<","<<__LINE__<<std::endl;
 
-  Eigen::Matrix4f t_localizer(Eigen::Matrix4f::Identity()); // map座標系からlidar座標系への変換行列
+    nh_global->getParam("my_ndt_param/resolution",ndt_res );
+    nh_global->getParam("my_ndt_param/step_size",step_size);
+    nh_global->getParam("my_ndt_param/transformation_epsilon",trans_eps);
+    nh_global->getParam("my_ndt_param/maximum_iterations",max_iter);
+    nh_global->getParam("my_ndt_param/leaf_size",voxel_leaf_size);
+    nh_global->getParam("my_ndt_param/minimum_scan_range",min_scan_range);
+    nh_global->getParam("my_ndt_param/maximum_scan_range",max_scan_range);
+    nh_global->getParam("my_ndt_param/minimum_add_shift",min_add_scan_shift);
+
+    std::cout << "param_callback" << std::endl;
+    std::cout << "ndt_res: " << ndt_res << std::endl;
+    std::cout << "step_size: " << step_size << std::endl;
+    std::cout << "trans_epsilon: " << trans_eps << std::endl;
+    std::cout << "max_iter: " << max_iter << std::endl;
+    std::cout << "voxel_leaf_size: " << voxel_leaf_size << std::endl;
+    std::cout << "min_scan_range: " << min_scan_range << std::endl;
+    std::cout << "max_scan_range: " << max_scan_range << std::endl;
+    std::cout << "min_add_scan_shift: " << min_add_scan_shift << std::endl;
+
+    Eigen::Matrix4f t_localizer(Eigen::Matrix4f::Identity()); // map座標系からlidar座標系への変換行列
   Eigen::Matrix4f t_base_link(Eigen::Matrix4f::Identity()); // map座標系からbase_link座標系への変換行列
   static tf::TransformBroadcaster br;
   tf::Transform transform;
